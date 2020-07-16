@@ -4,17 +4,21 @@
 <link rel="stylesheet" href="./bootstrap.min.css" />
 
 
-<input id="text" type="text" value="https://hogangnono.com" style="width:80%" /><br />
+<!-- <input id="text" type="text" value="https://hogangnono.com" style="width:80%" /><br /> -->
+
+
+
+<input type="text" class="form-control" id="qrcodeinput" aria-describedby="qrhelp">
+<small id="qrhelp" class="form-text text-muted">This is totally offline</small>
+<button type="submit" class="btn btn-primary">Submit</button>
 <div id="qrcode"></div>
-
-
 
 
 <script>
 var qrcode = new QRCode("qrcode");
 
 function makeCode () {      
-    var elText = document.getElementById("text");
+    var elText = document.getElementById("qrcodeinput");
     
     if (!elText.value) {
         alert("Input a text");

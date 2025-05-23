@@ -315,7 +315,7 @@
         </ul>
     </div>
 
-    <script>
+<script>
         const taskForm = document.getElementById('taskForm');
         const taskInput = document.getElementById('taskInput');
         const taskDueDate = document.getElementById('taskDueDate');
@@ -327,7 +327,7 @@
         const importDataFile = document.getElementById('importDataFile');
 
         let tasks = [];
-        let currentMonthYear = ''; // To store the currently selected tab, e.g., "2024-05"
+        let currentMonthYear = ''; // To store the currently selected tab, e.g., "2025-05"
 
         // --- Local Storage ---
         function saveTasks() {
@@ -337,7 +337,11 @@
         function loadTasks() {
             const storedTasks = localStorage.getItem('tasks');
             if (storedTasks) {
-                tasks = JSON.parse(storedTasks);
+                tasks = JSON.parse(storedTasks).map(task => ({
+                    ...task,
+                    completedInstances: task.completedInstances || [], // Ensure array exists
+                    deletedInstances: task.deletedInstances || []    // Ensure array exists
+                }));
             }
         }
 
@@ -356,29 +360,79 @@
 
         // --- Task Management ---
         function addTask(text, dueDate, recurrence, completed = false, id = Date.now().toString()) {
-            const task = { id, text, dueDate, recurrence, completed, originalDueDate: dueDate };
+            const task = {
+                id,
+                text,
+                dueDate, // This is the first due date
+                recurrence,
+                completed, // For the first instance or if the whole series is conceptually done
+                originalDueDate: dueDate, // The very first date, used as anchor for recurrence
+                completedInstances: [], // Dates of completed recurring instances
+                deletedInstances: []    // Dates of "deleted" (skipped) recurring instances
+            };
             tasks.push(task);
             saveTasks();
             renderApp();
         }
 
-        function toggleComplete(taskId) {
+        // Toggles completion for the MAIN task item (original due date)
+        function toggleMainTaskComplete(taskId) {
             tasks = tasks.map(task =>
                 task.id === taskId ? { ...task, completed: !task.completed } : task
             );
             saveTasks();
-            renderTasksForCurrentMonth(); // Re-render only tasks, not tabs
+            renderTasksForCurrentMonth();
         }
 
-        function deleteTask(taskId) {
+        // Deletes the ENTIRE task series (original and all recurrences)
+        function deleteTaskSeries(taskId) {
             tasks = tasks.filter(task => task.id !== taskId);
             saveTasks();
             renderApp(); // Re-render app as task deletion might affect month tabs
         }
 
+        // Marks a specific recurring instance as complete or not
+        function toggleCompleteInstance(originalTaskId, instanceDate) {
+            tasks = tasks.map(task => {
+                if (task.id === originalTaskId) {
+                    const completedInstances = task.completedInstances || [];
+                    if (completedInstances.includes(instanceDate)) {
+                        // Already completed, so un-complete it
+                        return { ...task, completedInstances: completedInstances.filter(d => d !== instanceDate) };
+                    } else {
+                        // Not completed, so complete it
+                        return { ...task, completedInstances: [...completedInstances, instanceDate] };
+                    }
+                }
+                return task;
+            });
+            saveTasks();
+            renderTasksForCurrentMonth();
+        }
+
+        // "Deletes" (skips) a specific recurring instance
+        function deleteInstance(originalTaskId, instanceDate) {
+            tasks = tasks.map(task => {
+                if (task.id === originalTaskId) {
+                    const deletedInstances = task.deletedInstances || [];
+                    if (!deletedInstances.includes(instanceDate)) { // Avoid duplicates
+                        return { ...task, deletedInstances: [...deletedInstances, instanceDate] };
+                    }
+                }
+                return task;
+            });
+            saveTasks();
+            renderTasksForCurrentMonth(); // Could also call renderApp if many deletions affect tabs
+        }
+
+
         // --- Recurrence Logic ---
         function getNextDueDate(currentDueDate, recurrence) {
             const date = new Date(currentDueDate + 'T00:00:00'); // Ensure parsing as local time
+            if (isNaN(date.getTime())) { // Invalid date check
+                console.error("Invalid date in getNextDueDate:", currentDueDate);
+                return null;
+            }
             switch (recurrence) {
                 case 'daily':
                     date.setDate(date.getDate() + 1);
@@ -389,13 +443,9 @@
                 case 'monthly':
                     date.setMonth(date.getMonth() + 1);
                     break;
-                // case 'yearly':
-                //     date.setFullYear(date.getFullYear() + 1);
-                //     break;
                 default:
-                    return null; // Should not happen for recurring tasks
+                    return null;
             }
-            // Format back to YYYY-MM-DD
             const year = date.getFullYear();
             const month = String(date.getMonth() + 1).padStart(2, '0');
             const day = String(date.getDate()).padStart(2, '0');
@@ -405,54 +455,65 @@
 
         // --- Rendering ---
         function renderTasksForCurrentMonth() {
-            taskList.innerHTML = ''; // Clear current tasks
+            taskList.innerHTML = '';
 
-            if (!currentMonthYear) return; // Don't render if no tab is selected
+            if (!currentMonthYear) return;
 
             const [year, month] = currentMonthYear.split('-').map(Number);
 
-            const tasksToDisplay = tasks.flatMap(task => {
+            const tasksToDisplay = tasks.flatMap(originalTask => {
                 const taskInstances = [];
-                let currentDate = task.dueDate;
-                const taskDate = new Date(currentDate + 'T00:00:00');
-                const taskYear = taskDate.getFullYear();
-                const taskMonth = taskDate.getMonth() + 1;
+                const originalTaskDate = new Date(originalTask.dueDate + 'T00:00:00');
 
-                // Original task
-                if (taskYear === year && taskMonth === month) {
-                    taskInstances.push({ ...task, displayDate: currentDate });
+                // 1. Handle the original task instance
+                if (originalTaskDate.getFullYear() === year && (originalTaskDate.getMonth() + 1) === month) {
+                    if (!originalTask.deletedInstances.includes(originalTask.dueDate)) { // Check if original instance itself was "deleted"
+                         taskInstances.push({
+                            ...originalTask,
+                            displayDate: originalTask.dueDate,
+                            isRecurringInstance: false, // Explicitly mark it as not a generated recurring one
+                            isInstanceCompleted: originalTask.completed // Use the main 'completed' flag
+                        });
+                    }
                 }
 
-                // Recurring tasks
-                if (task.recurrence !== 'none') {
-                    let nextDate = task.originalDueDate; // Start recurrence from original due date
-                    const maxRecurrences = 365; // Limit to avoid infinite loops for far future dates
+                // 2. Generate and handle recurring instances
+                if (originalTask.recurrence !== 'none') {
+                    let currentDate = originalTask.originalDueDate; // Start recurrence from original due date
+                    const maxRecurrences = 365; // Safety limit
                     let count = 0;
 
                     while(count < maxRecurrences) {
-                        nextDate = getNextDueDate(nextDate, task.recurrence);
-                        if (!nextDate) break;
+                        currentDate = getNextDueDate(currentDate, originalTask.recurrence);
+                        if (!currentDate) break; // Stop if getNextDueDate fails
 
-                        const recurringTaskDate = new Date(nextDate + 'T00:00:00');
+                        const recurringTaskDate = new Date(currentDate + 'T00:00:00');
+                        if (isNaN(recurringTaskDate.getTime())) break; // Stop on invalid date
+
                         const recurringTaskYear = recurringTaskDate.getFullYear();
                         const recurringTaskMonth = recurringTaskDate.getMonth() + 1;
 
-                        if (recurringTaskYear > year || (recurringTaskYear === year && recurringTaskMonth > month)) {
-                             // Optimization: if we passed the current tab's month, stop for this task
-                            if (recurringTaskYear > year + 1) break; // Further optimization: stop if more than 1 year ahead
-                        }
+                        // Optimization: if we passed the current tab's month, and are well into future, stop
+                        if (recurringTaskYear > year + 1) break;
+                        if (recurringTaskYear === year + 1 && recurringTaskMonth > month) break;
 
 
                         if (recurringTaskYear === year && recurringTaskMonth === month) {
-                            // Check if this specific recurring instance is already conceptually "completed"
-                            // This is a simplified check. A more robust system would track completions per instance.
-                            // For now, if the original task is completed, we assume recurring ones are too for display.
-                            taskInstances.push({
-                                ...task, // Use original task's ID and completion status
-                                id: `${task.id}-recur-${nextDate}`, // Unique ID for this instance
-                                displayDate: nextDate,
-                                isRecurringInstance: true
-                            });
+                            // Check if this specific instance is marked as "deleted"
+                            if (originalTask.deletedInstances.includes(currentDate)) {
+                                // Skip this deleted instance
+                            } else {
+                                // Check if this specific instance is marked as completed
+                                const isInstanceCompleted = originalTask.completedInstances.includes(currentDate);
+                                taskInstances.push({
+                                    ...originalTask, // Base properties from original
+                                    id: originalTask.id, // Keep original ID for linking
+                                    instanceDateId: `${originalTask.id}-recur-${currentDate}`, // Unique ID for this rendered LI element
+                                    displayDate: currentDate,
+                                    isRecurringInstance: true,
+                                    isInstanceCompleted: isInstanceCompleted
+                                });
+                            }
                         }
                         count++;
                     }
@@ -460,18 +521,16 @@
                 return taskInstances;
             });
 
-            // Sort tasks by displayDate
             tasksToDisplay.sort((a, b) => new Date(a.displayDate) - new Date(b.displayDate));
 
-            // Remove duplicates based on displayDate and original task text (simple de-duplication)
             const uniqueTasksToDisplay = tasksToDisplay.filter((task, index, self) =>
-                index === self.findIndex(t => t.displayDate === task.displayDate && t.text === task.text)
+                index === self.findIndex(t => t.instanceDateId === task.instanceDateId || (!t.isRecurringInstance && t.id === task.id && t.displayDate === task.displayDate) )
             );
 
 
             if (uniqueTasksToDisplay.length === 0) {
                 taskList.innerHTML = '<li>No tasks for this month.</li>';
-                if (document.body.classList.contains('dark-mode')) {
+                 if (document.body.classList.contains('dark-mode')) {
                      taskList.firstChild.style.color = 'var(--text-color-dark)';
                 } else {
                      taskList.firstChild.style.color = 'var(--text-color-light)';
@@ -482,7 +541,9 @@
             uniqueTasksToDisplay.forEach(task => {
                 const li = document.createElement('li');
                 li.className = 'task-item';
-                if (task.completed && !task.isRecurringInstance) { // Only original task can be marked 'completed' in the data model
+                li.id = task.isRecurringInstance ? task.instanceDateId : task.id; // Use instanceDateId for recurring for DOM
+
+                if (task.isInstanceCompleted) {
                     li.classList.add('completed');
                 }
 
@@ -496,7 +557,6 @@
                     dueDateSpan.textContent += " (Recurring)";
                 }
 
-
                 const textAndDateDiv = document.createElement('div');
                 textAndDateDiv.appendChild(taskTextSpan);
                 textAndDateDiv.appendChild(dueDateSpan);
@@ -504,28 +564,31 @@
                 const actionsDiv = document.createElement('div');
                 actionsDiv.className = 'actions';
 
-                // Recurring instances cannot be marked complete/deleted directly from the list
-                // to keep it simple. They are controlled by the original task.
-                if (!task.isRecurringInstance) {
+                if (task.isRecurringInstance) {
+                    const completeInstanceBtn = document.createElement('button');
+                    completeInstanceBtn.className = 'complete-btn';
+                    completeInstanceBtn.textContent = task.isInstanceCompleted ? 'Undo' : 'Complete';
+                    completeInstanceBtn.onclick = () => toggleCompleteInstance(task.id, task.displayDate); // Pass original task ID
+                    actionsDiv.appendChild(completeInstanceBtn);
+
+                    const deleteInstanceBtn = document.createElement('button');
+                    deleteInstanceBtn.className = 'delete-btn';
+                    deleteInstanceBtn.textContent = 'Skip Instance';
+                    deleteInstanceBtn.onclick = () => deleteInstance(task.id, task.displayDate); // Pass original task ID
+                    actionsDiv.appendChild(deleteInstanceBtn);
+                } else { // Original task item
                     const completeBtn = document.createElement('button');
                     completeBtn.className = 'complete-btn';
                     completeBtn.textContent = task.completed ? 'Undo' : 'Complete';
-                    completeBtn.onclick = () => toggleComplete(task.id);
+                    completeBtn.onclick = () => toggleMainTaskComplete(task.id);
                     actionsDiv.appendChild(completeBtn);
 
                     const deleteBtn = document.createElement('button');
                     deleteBtn.className = 'delete-btn';
-                    deleteBtn.textContent = 'Delete';
-                    deleteBtn.onclick = () => deleteTask(task.id);
+                    deleteBtn.textContent = 'Delete Series';
+                    deleteBtn.onclick = () => deleteTaskSeries(task.id);
                     actionsDiv.appendChild(deleteBtn);
-                } else {
-                    const recurringInfo = document.createElement('span');
-                    recurringInfo.style.fontSize = '0.8em';
-                    recurringInfo.style.opacity = '0.7';
-                    // recurringInfo.textContent = "(Recurring)";
-                    actionsDiv.appendChild(recurringInfo);
                 }
-
 
                 li.appendChild(textAndDateDiv);
                 li.appendChild(actionsDiv);
@@ -536,49 +599,75 @@
         function renderMonthTabs() {
             monthTabsContainer.innerHTML = '';
             const uniqueMonths = new Set();
+            const todayForTabs = new Date(); // Use a consistent 'today' for tab generation
 
-            // Add current month and next 12 months by default if no tasks
-            const today = new Date();
+            // Add current month and next 12 months by default
             for (let i = 0; i < 12; i++) {
-                const date = new Date(today.getFullYear(), today.getMonth() + i, 1);
+                const date = new Date(todayForTabs.getFullYear(), todayForTabs.getMonth() + i, 1);
                 uniqueMonths.add(`${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`);
             }
 
-
             tasks.forEach(task => {
-                const taskDate = new Date(task.dueDate + 'T00:00:00');
-                uniqueMonths.add(`${taskDate.getFullYear()}-${String(taskDate.getMonth() + 1).padStart(2, '0')}`);
+                // Add month of original due date
+                const taskDate = new Date(task.originalDueDate + 'T00:00:00');
+                if (!isNaN(taskDate.getTime())) {
+                    uniqueMonths.add(`${taskDate.getFullYear()}-${String(taskDate.getMonth() + 1).padStart(2, '0')}`);
+                }
 
-                // Add months for recurring tasks as well, up to a limit (e.g., 2 years)
+
+                // Add months for active recurring tasks
                 if (task.recurrence !== 'none') {
                     let currentDate = task.originalDueDate;
-                    const endDateLimit = new Date();
-                    endDateLimit.setFullYear(endDateLimit.getFullYear() + 2); // Show tabs for up to 2 years of recurrence
+                    const endDateLimit = new Date(todayForTabs.getFullYear() + 2, todayForTabs.getMonth(), todayForTabs.getDate()); // Project tabs 2 years into the future
 
-                    for (let i = 0; i < 24 * (task.recurrence === 'monthly' ? 1 : (task.recurrence === 'weekly' ? 4 : 30)) ; i++) { // Heuristic limit
+                    for (let i = 0; i < 730; i++) { // Limit iterations (approx 2 years daily)
                         currentDate = getNextDueDate(currentDate, task.recurrence);
-                        if (!currentDate || new Date(currentDate) > endDateLimit) break;
+                        if (!currentDate) break;
                         const recurringDate = new Date(currentDate + 'T00:00:00');
-                        uniqueMonths.add(`${recurringDate.getFullYear()}-${String(recurringDate.getMonth() + 1).padStart(2, '0')}`);
+                        if (isNaN(recurringDate.getTime()) || recurringDate > endDateLimit) break;
+
+                        // Only add tab if instance is NOT in deletedInstances for that original task
+                        if (!task.deletedInstances.includes(currentDate)) {
+                             uniqueMonths.add(`${recurringDate.getFullYear()}-${String(recurringDate.getMonth() + 1).padStart(2, '0')}`);
+                        }
                     }
                 }
             });
 
-
             const sortedMonths = Array.from(uniqueMonths).sort();
 
-            if (sortedMonths.length === 0) {
-                 // Handled by default months above
+            let newCurrentMonthYear = currentMonthYear;
+
+            if (sortedMonths.length > 0) {
+                if (!currentMonthYear || !sortedMonths.includes(currentMonthYear)) {
+                    const currentActualMonthStr = `${todayForTabs.getFullYear()}-${String(todayForTabs.getMonth() + 1).padStart(2, '0')}`;
+                    if (sortedMonths.includes(currentActualMonthStr)) {
+                        newCurrentMonthYear = currentActualMonthStr;
+                    } else {
+                        newCurrentMonthYear = sortedMonths[0]; // Default to the earliest month with tasks/default tabs
+                    }
+                }
+            } else { // No tasks, no default tabs generated somehow (should be rare with default tab logic)
+                 newCurrentMonthYear = `${todayForTabs.getFullYear()}-${String(todayForTabs.getMonth() + 1).padStart(2, '0')}`;
+                 const tabButton = document.createElement('button');
+                 tabButton.className = 'tab-button';
+                 tabButton.textContent = newCurrentMonthYear;
+                 tabButton.dataset.monthYear = newCurrentMonthYear;
+                 monthTabsContainer.appendChild(tabButton); // Add at least current month tab
             }
+            currentMonthYear = newCurrentMonthYear; // Update global currentMonthYear
 
 
-            sortedMonths.forEach(monthYear => {
+            sortedMonths.forEach(monthYearStr => {
                 const tabButton = document.createElement('button');
                 tabButton.className = 'tab-button';
-                tabButton.textContent = monthYear;
-                tabButton.dataset.monthYear = monthYear;
+                tabButton.textContent = monthYearStr;
+                tabButton.dataset.monthYear = monthYearStr;
+                if (monthYearStr === currentMonthYear) {
+                    tabButton.classList.add('active');
+                }
                 tabButton.onclick = () => {
-                    currentMonthYear = monthYear;
+                    currentMonthYear = monthYearStr;
                     document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
                     tabButton.classList.add('active');
                     renderTasksForCurrentMonth();
@@ -586,32 +675,12 @@
                 monthTabsContainer.appendChild(tabButton);
             });
 
-            // Activate the current month's tab or the first available tab
-            if (!currentMonthYear && sortedMonths.length > 0) {
-                const currentActualMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
-                if (sortedMonths.includes(currentActualMonth)) {
-                    currentMonthYear = currentActualMonth;
-                } else {
-                    currentMonthYear = sortedMonths[0];
-                }
-            } else if (sortedMonths.length === 0) {
-                currentMonthYear = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`; // fallback
-                const tabButton = document.createElement('button');
-                tabButton.className = 'tab-button active'; // Active by default
-                tabButton.textContent = currentMonthYear;
-                tabButton.dataset.monthYear = currentMonthYear;
-                tabButton.onclick = () => { /* already handled */ };
-                monthTabsContainer.appendChild(tabButton);
-            }
-
-
-            const activeTab = monthTabsContainer.querySelector(`.tab-button[data-month-year="${currentMonthYear}"]`);
-            if (activeTab) {
-                activeTab.classList.add('active');
-            } else if (monthTabsContainer.firstChild) { // Fallback to first tab if currentMonthYear not found
+             // Ensure an active tab if currentMonthYear was set but no corresponding button rendered (edge case)
+            if (currentMonthYear && !monthTabsContainer.querySelector('.tab-button.active') && monthTabsContainer.firstChild) {
                 monthTabsContainer.firstChild.classList.add('active');
                 currentMonthYear = monthTabsContainer.firstChild.dataset.monthYear;
             }
+
         }
 
         function renderApp() {
@@ -629,8 +698,8 @@
             if (text && dueDate) {
                 addTask(text, dueDate, recurrence);
                 taskInput.value = '';
-                taskDueDate.value = ''; // Optionally reset date
-                // taskRecurrence.value = 'none'; // Optionally reset recurrence
+                // taskDueDate.value = ''; // Keep date for easier subsequent entries or reset as preferred
+                // taskRecurrence.value = 'none';
             } else {
                 alert('Please enter task description and due date.');
             }
@@ -646,7 +715,7 @@
                 alert("No data to export.");
                 return;
             }
-            const jsonData = JSON.stringify(tasks, null, 2); // Pretty print JSON
+            const jsonData = JSON.stringify(tasks, null, 2);
             const blob = new Blob([jsonData], { type: 'application/json' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
@@ -664,24 +733,37 @@
                 const reader = new FileReader();
                 reader.onload = (e) => {
                     try {
-                        const importedTasks = JSON.parse(e.target.result);
-                        if (Array.isArray(importedTasks)) {
-                            // Basic validation for task structure (can be more thorough)
+                        const importedTasksRaw = JSON.parse(e.target.result);
+                        if (Array.isArray(importedTasksRaw)) {
+                            // Validate and ensure new fields exist
+                            const importedTasks = importedTasksRaw.map(task => ({
+                                id: task.id || Date.now().toString() + Math.random(), // Ensure ID
+                                text: task.text || "",
+                                dueDate: task.dueDate,
+                                recurrence: task.recurrence || "none",
+                                completed: task.completed || false,
+                                originalDueDate: task.originalDueDate || task.dueDate,
+                                completedInstances: Array.isArray(task.completedInstances) ? task.completedInstances : [],
+                                deletedInstances: Array.isArray(task.deletedInstances) ? task.deletedInstances : []
+                            }));
+
+                            // More robust validation could be added here
                             const isValid = importedTasks.every(task =>
                                 task.hasOwnProperty('id') &&
                                 task.hasOwnProperty('text') &&
-                                task.hasOwnProperty('dueDate') &&
+                                task.hasOwnProperty('dueDate') && // Check for valid date format if necessary
                                 task.hasOwnProperty('recurrence') &&
                                 task.hasOwnProperty('completed') &&
-                                task.hasOwnProperty('originalDueDate')
+                                task.hasOwnProperty('originalDueDate') &&
+                                task.hasOwnProperty('completedInstances') &&
+                                task.hasOwnProperty('deletedInstances')
                             );
 
                             if (isValid) {
                                 if (confirm("Importing will replace all current tasks. Continue?")) {
                                     tasks = importedTasks;
                                     saveTasks();
-                                    // Set currentMonthYear to the month of the first imported task or current month
-                                    if (tasks.length > 0) {
+                                    if (tasks.length > 0 && tasks[0].dueDate) {
                                         const firstTaskDate = new Date(tasks[0].dueDate + 'T00:00:00');
                                         currentMonthYear = `${firstTaskDate.getFullYear()}-${String(firstTaskDate.getMonth() + 1).padStart(2, '0')}`;
                                     } else {
@@ -692,15 +774,16 @@
                                     alert("Data imported successfully!");
                                 }
                             } else {
-                                alert("Invalid JSON file format for tasks.");
+                                alert("Invalid JSON file format or missing task properties after processing.");
                             }
                         } else {
                             alert("Invalid JSON file format. Expected an array of tasks.");
                         }
                     } catch (error) {
+                        console.error("Import error:", error);
                         alert("Error reading or parsing JSON file: " + error.message);
                     } finally {
-                        importDataFile.value = ''; // Reset file input
+                        importDataFile.value = '';
                     }
                 };
                 reader.readAsText(file);
@@ -712,15 +795,30 @@
         loadThemePreference();
         loadTasks();
 
-        // Set initial due date to today
         const today = new Date();
         const yyyy = today.getFullYear();
-        const mm = String(today.getMonth() + 1).padStart(2, '0'); // Months are 0-indexed
+        const mm = String(today.getMonth() + 1).padStart(2, '0');
         const dd = String(today.getDate()).padStart(2, '0');
-        taskDueDate.value = `${yyyy}-${mm}-${dd}`;
-
-        // Set initial currentMonthYear for tab selection
-        currentMonthYear = `${yyyy}-${mm}`;
+        if (!taskDueDate.value) { // Set initial date only if not already set (e.g. by browser cache)
+            taskDueDate.value = `${yyyy}-${mm}-${dd}`;
+        }
+        
+        // Set initial currentMonthYear for tab selection more robustly
+        if (!currentMonthYear || tasks.length === 0) { // If no currentMonthYear from tasks or no tasks
+             currentMonthYear = `${yyyy}-${mm}`;
+        } else {
+            // Check if currentMonthYear is still valid given loaded tasks, otherwise reset
+            const allTaskMonths = new Set();
+            tasks.forEach(task => {
+                const taskDate = new Date(task.originalDueDate + 'T00:00:00');
+                 if (!isNaN(taskDate.getTime())) {
+                    allTaskMonths.add(`${taskDate.getFullYear()}-${String(taskDate.getMonth() + 1).padStart(2, '0')}`);
+                }
+            });
+            if (!allTaskMonths.has(currentMonthYear)) {
+                 currentMonthYear = `${yyyy}-${mm}`; // Fallback to current month
+            }
+        }
 
         renderApp();
 

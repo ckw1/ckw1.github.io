@@ -1,0 +1,729 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>To-Do Web App</title>
+    <style>
+        :root {
+            --background-color-light: #f4f4f4;
+            --text-color-light: #333;
+            --container-bg-light: #fff;
+            --input-bg-light: #fff;
+            --button-bg-light: #5cb85c;
+            --button-text-light: #fff;
+            --tab-bg-light: #eee;
+            --tab-active-bg-light: #ddd;
+            --task-item-bg-light: #fff;
+            --task-item-border-light: #ddd;
+            --danger-button-bg-light: #d9534f;
+
+            --background-color-dark: #333;
+            --text-color-dark: #f4f4f4;
+            --container-bg-dark: #444;
+            --input-bg-dark: #555;
+            --button-bg-dark: #6fbf73;
+            --button-text-dark: #333;
+            --tab-bg-dark: #555;
+            --tab-active-bg-dark: #666;
+            --task-item-bg-dark: #505050;
+            --task-item-border-dark: #666;
+            --danger-button-bg-dark: #e06c75;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: var(--background-color-light);
+            color: var(--text-color-light);
+            transition: background-color 0.3s, color 0.3s;
+        }
+
+        body.dark-mode {
+            background-color: var(--background-color-dark);
+            color: var(--text-color-dark);
+        }
+
+        .container {
+            max-width: 800px;
+            margin: auto;
+            background-color: var(--container-bg-light);
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            transition: background-color 0.3s;
+        }
+
+        body.dark-mode .container {
+            background-color: var(--container-bg-dark);
+        }
+
+        h1 {
+            text-align: center;
+        }
+
+        .controls {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+
+        .controls button, .controls input[type="file"] {
+            padding: 8px 12px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            background-color: var(--button-bg-light);
+            color: var(--button-text-light);
+            font-size: 14px;
+            margin-top: 5px;
+        }
+        body.dark-mode .controls button, body.dark-mode .controls input[type="file"] {
+            background-color: var(--button-bg-dark);
+            color: var(--button-text-dark);
+        }
+        .controls .danger {
+            background-color: var(--danger-button-bg-light);
+        }
+        body.dark-mode .controls .danger {
+            background-color: var(--danger-button-bg-dark);
+        }
+
+
+        .task-form {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-bottom: 20px;
+            padding: 15px;
+            border: 1px solid var(--task-item-border-light);
+            border-radius: 5px;
+        }
+        body.dark-mode .task-form {
+            border-color: var(--task-item-border-dark);
+        }
+
+        .task-form input[type="text"],
+        .task-form input[type="date"],
+        .task-form select {
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 16px;
+            background-color: var(--input-bg-light);
+            color: var(--text-color-light);
+        }
+        body.dark-mode .task-form input[type="text"],
+        body.dark-mode .task-form input[type="date"],
+        body.dark-mode .task-form select {
+            background-color: var(--input-bg-dark);
+            color: var(--text-color-dark);
+            border-color: #666;
+        }
+
+
+        .task-form button {
+            padding: 10px 15px;
+            background-color: var(--button-bg-light);
+            color: var(--button-text-light);
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        body.dark-mode .task-form button {
+            background-color: var(--button-bg-dark);
+            color: var(--button-text-dark);
+        }
+
+        .tabs {
+            display: flex;
+            margin-bottom: 10px;
+            overflow-x: auto; /* For many months */
+            padding-bottom: 5px; /* Space for scrollbar */
+        }
+
+        .tab-button {
+            padding: 10px 15px;
+            cursor: pointer;
+            border: none;
+            background-color: var(--tab-bg-light);
+            margin-right: 5px;
+            border-radius: 4px 4px 0 0;
+            font-size: 14px;
+            white-space: nowrap;
+        }
+        body.dark-mode .tab-button {
+            background-color: var(--tab-bg-dark);
+            color: var(--text-color-dark);
+        }
+
+        .tab-button.active {
+            background-color: var(--tab-active-bg-light);
+            font-weight: bold;
+        }
+        body.dark-mode .tab-button.active {
+            background-color: var(--tab-active-bg-dark);
+        }
+
+        .task-list {
+            list-style-type: none;
+            padding: 0;
+        }
+
+        .task-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px;
+            border: 1px solid var(--task-item-border-light);
+            margin-bottom: 8px;
+            border-radius: 4px;
+            background-color: var(--task-item-bg-light);
+            transition: background-color 0.3s;
+        }
+        body.dark-mode .task-item {
+            background-color: var(--task-item-bg-dark);
+            border-color: var(--task-item-border-dark);
+        }
+
+        .task-item.completed span {
+            text-decoration: line-through;
+            color: #888;
+        }
+        body.dark-mode .task-item.completed span {
+            color: #aaa;
+        }
+
+        .task-item span {
+            flex-grow: 1;
+            margin-right: 10px;
+        }
+        .task-item .due-date {
+            font-size: 0.9em;
+            color: #666;
+            margin-right: 10px;
+        }
+        body.dark-mode .task-item .due-date {
+            color: #ccc;
+        }
+
+        .task-item button {
+            padding: 6px 10px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            margin-left: 5px;
+        }
+
+        .task-item .complete-btn {
+            background-color: #5cb85c;
+            color: white;
+        }
+        body.dark-mode .task-item .complete-btn {
+            background-color: #6fbf73;
+            color: #333;
+        }
+        .task-item .delete-btn {
+            background-color: var(--danger-button-bg-light);
+            color: white;
+        }
+        body.dark-mode .task-item .delete-btn {
+            background-color: var(--danger-button-bg-dark);
+        }
+
+        /* Responsive adjustments */
+        @media (max-width: 600px) {
+            .controls {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            .controls button, .controls input[type="file"] {
+                width: 100%;
+                margin-bottom: 5px;
+            }
+            .task-form {
+                padding: 10px;
+            }
+            .tabs {
+                font-size: 12px; /* Smaller tabs on mobile */
+            }
+            .tab-button {
+                padding: 8px 10px;
+            }
+            .task-item {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+            .task-item div:first-child { /* Task text and due date container */
+                margin-bottom: 8px;
+                width: 100%;
+            }
+            .task-item .actions {
+                width: 100%;
+                display: flex;
+                justify-content: flex-end;
+            }
+            .task-item .actions button {
+                 flex-grow: 1;
+                 margin-left: 5px;
+            }
+            .task-item .actions button:first-child {
+                margin-left: 0;
+            }
+        }
+
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>My To-Do List</h1>
+
+        <div class="controls">
+            <button id="toggleModeBtn">Toggle Light/Dark Mode</button>
+            <button id="exportDataBtn">Export Data (JSON)</button>
+            <div>
+                <label for="importDataFile" style="font-size: 12px; margin-right: 5px;">Import Data (JSON):</label>
+                <input type="file" id="importDataFile" accept=".json" style="padding: 3px; font-size: 12px;">
+            </div>
+        </div>
+
+        <form id="taskForm" class="task-form">
+            <input type="text" id="taskInput" placeholder="Enter task description..." required>
+            <input type="date" id="taskDueDate" required>
+            <select id="taskRecurrence">
+                <option value="none">No Recurrence</option>
+                <option value="daily">Daily</option>
+                <option value="weekly">Weekly</option>
+                <option value="monthly">Monthly</option>
+                <!-- <option value="yearly">Yearly</option> -->
+            </select>
+            <button type="submit">Add Task</button>
+        </form>
+
+        <div class="tabs" id="monthTabs">
+            <!-- Tabs will be generated here -->
+        </div>
+
+        <ul id="taskList" class="task-list">
+            <!-- Tasks will be listed here -->
+        </ul>
+    </div>
+
+    <script>
+        const taskForm = document.getElementById('taskForm');
+        const taskInput = document.getElementById('taskInput');
+        const taskDueDate = document.getElementById('taskDueDate');
+        const taskRecurrence = document.getElementById('taskRecurrence');
+        const taskList = document.getElementById('taskList');
+        const monthTabsContainer = document.getElementById('monthTabs');
+        const toggleModeBtn = document.getElementById('toggleModeBtn');
+        const exportDataBtn = document.getElementById('exportDataBtn');
+        const importDataFile = document.getElementById('importDataFile');
+
+        let tasks = [];
+        let currentMonthYear = ''; // To store the currently selected tab, e.g., "2024-05"
+
+        // --- Local Storage ---
+        function saveTasks() {
+            localStorage.setItem('tasks', JSON.stringify(tasks));
+        }
+
+        function loadTasks() {
+            const storedTasks = localStorage.getItem('tasks');
+            if (storedTasks) {
+                tasks = JSON.parse(storedTasks);
+            }
+        }
+
+        function saveThemePreference(theme) {
+            localStorage.setItem('theme', theme);
+        }
+
+        function loadThemePreference() {
+            const theme = localStorage.getItem('theme');
+            if (theme === 'dark') {
+                document.body.classList.add('dark-mode');
+            } else {
+                document.body.classList.remove('dark-mode');
+            }
+        }
+
+        // --- Task Management ---
+        function addTask(text, dueDate, recurrence, completed = false, id = Date.now().toString()) {
+            const task = { id, text, dueDate, recurrence, completed, originalDueDate: dueDate };
+            tasks.push(task);
+            saveTasks();
+            renderApp();
+        }
+
+        function toggleComplete(taskId) {
+            tasks = tasks.map(task =>
+                task.id === taskId ? { ...task, completed: !task.completed } : task
+            );
+            saveTasks();
+            renderTasksForCurrentMonth(); // Re-render only tasks, not tabs
+        }
+
+        function deleteTask(taskId) {
+            tasks = tasks.filter(task => task.id !== taskId);
+            saveTasks();
+            renderApp(); // Re-render app as task deletion might affect month tabs
+        }
+
+        // --- Recurrence Logic ---
+        function getNextDueDate(currentDueDate, recurrence) {
+            const date = new Date(currentDueDate + 'T00:00:00'); // Ensure parsing as local time
+            switch (recurrence) {
+                case 'daily':
+                    date.setDate(date.getDate() + 1);
+                    break;
+                case 'weekly':
+                    date.setDate(date.getDate() + 7);
+                    break;
+                case 'monthly':
+                    date.setMonth(date.getMonth() + 1);
+                    break;
+                // case 'yearly':
+                //     date.setFullYear(date.getFullYear() + 1);
+                //     break;
+                default:
+                    return null; // Should not happen for recurring tasks
+            }
+            // Format back to YYYY-MM-DD
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        }
+
+
+        // --- Rendering ---
+        function renderTasksForCurrentMonth() {
+            taskList.innerHTML = ''; // Clear current tasks
+
+            if (!currentMonthYear) return; // Don't render if no tab is selected
+
+            const [year, month] = currentMonthYear.split('-').map(Number);
+
+            const tasksToDisplay = tasks.flatMap(task => {
+                const taskInstances = [];
+                let currentDate = task.dueDate;
+                const taskDate = new Date(currentDate + 'T00:00:00');
+                const taskYear = taskDate.getFullYear();
+                const taskMonth = taskDate.getMonth() + 1;
+
+                // Original task
+                if (taskYear === year && taskMonth === month) {
+                    taskInstances.push({ ...task, displayDate: currentDate });
+                }
+
+                // Recurring tasks
+                if (task.recurrence !== 'none') {
+                    let nextDate = task.originalDueDate; // Start recurrence from original due date
+                    const maxRecurrences = 365; // Limit to avoid infinite loops for far future dates
+                    let count = 0;
+
+                    while(count < maxRecurrences) {
+                        nextDate = getNextDueDate(nextDate, task.recurrence);
+                        if (!nextDate) break;
+
+                        const recurringTaskDate = new Date(nextDate + 'T00:00:00');
+                        const recurringTaskYear = recurringTaskDate.getFullYear();
+                        const recurringTaskMonth = recurringTaskDate.getMonth() + 1;
+
+                        if (recurringTaskYear > year || (recurringTaskYear === year && recurringTaskMonth > month)) {
+                             // Optimization: if we passed the current tab's month, stop for this task
+                            if (recurringTaskYear > year + 1) break; // Further optimization: stop if more than 1 year ahead
+                        }
+
+
+                        if (recurringTaskYear === year && recurringTaskMonth === month) {
+                            // Check if this specific recurring instance is already conceptually "completed"
+                            // This is a simplified check. A more robust system would track completions per instance.
+                            // For now, if the original task is completed, we assume recurring ones are too for display.
+                            taskInstances.push({
+                                ...task, // Use original task's ID and completion status
+                                id: `${task.id}-recur-${nextDate}`, // Unique ID for this instance
+                                displayDate: nextDate,
+                                isRecurringInstance: true
+                            });
+                        }
+                        count++;
+                    }
+                }
+                return taskInstances;
+            });
+
+            // Sort tasks by displayDate
+            tasksToDisplay.sort((a, b) => new Date(a.displayDate) - new Date(b.displayDate));
+
+            // Remove duplicates based on displayDate and original task text (simple de-duplication)
+            const uniqueTasksToDisplay = tasksToDisplay.filter((task, index, self) =>
+                index === self.findIndex(t => t.displayDate === task.displayDate && t.text === task.text)
+            );
+
+
+            if (uniqueTasksToDisplay.length === 0) {
+                taskList.innerHTML = '<li>No tasks for this month.</li>';
+                if (document.body.classList.contains('dark-mode')) {
+                     taskList.firstChild.style.color = 'var(--text-color-dark)';
+                } else {
+                     taskList.firstChild.style.color = 'var(--text-color-light)';
+                }
+                return;
+            }
+
+            uniqueTasksToDisplay.forEach(task => {
+                const li = document.createElement('li');
+                li.className = 'task-item';
+                if (task.completed && !task.isRecurringInstance) { // Only original task can be marked 'completed' in the data model
+                    li.classList.add('completed');
+                }
+
+                const taskTextSpan = document.createElement('span');
+                taskTextSpan.textContent = task.text;
+
+                const dueDateSpan = document.createElement('span');
+                dueDateSpan.className = 'due-date';
+                dueDateSpan.textContent = `Due: ${task.displayDate}`;
+                if (task.isRecurringInstance) {
+                    dueDateSpan.textContent += " (Recurring)";
+                }
+
+
+                const textAndDateDiv = document.createElement('div');
+                textAndDateDiv.appendChild(taskTextSpan);
+                textAndDateDiv.appendChild(dueDateSpan);
+
+                const actionsDiv = document.createElement('div');
+                actionsDiv.className = 'actions';
+
+                // Recurring instances cannot be marked complete/deleted directly from the list
+                // to keep it simple. They are controlled by the original task.
+                if (!task.isRecurringInstance) {
+                    const completeBtn = document.createElement('button');
+                    completeBtn.className = 'complete-btn';
+                    completeBtn.textContent = task.completed ? 'Undo' : 'Complete';
+                    completeBtn.onclick = () => toggleComplete(task.id);
+                    actionsDiv.appendChild(completeBtn);
+
+                    const deleteBtn = document.createElement('button');
+                    deleteBtn.className = 'delete-btn';
+                    deleteBtn.textContent = 'Delete';
+                    deleteBtn.onclick = () => deleteTask(task.id);
+                    actionsDiv.appendChild(deleteBtn);
+                } else {
+                    const recurringInfo = document.createElement('span');
+                    recurringInfo.style.fontSize = '0.8em';
+                    recurringInfo.style.opacity = '0.7';
+                    // recurringInfo.textContent = "(Recurring)";
+                    actionsDiv.appendChild(recurringInfo);
+                }
+
+
+                li.appendChild(textAndDateDiv);
+                li.appendChild(actionsDiv);
+                taskList.appendChild(li);
+            });
+        }
+
+        function renderMonthTabs() {
+            monthTabsContainer.innerHTML = '';
+            const uniqueMonths = new Set();
+
+            // Add current month and next 12 months by default if no tasks
+            const today = new Date();
+            for (let i = 0; i < 12; i++) {
+                const date = new Date(today.getFullYear(), today.getMonth() + i, 1);
+                uniqueMonths.add(`${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`);
+            }
+
+
+            tasks.forEach(task => {
+                const taskDate = new Date(task.dueDate + 'T00:00:00');
+                uniqueMonths.add(`${taskDate.getFullYear()}-${String(taskDate.getMonth() + 1).padStart(2, '0')}`);
+
+                // Add months for recurring tasks as well, up to a limit (e.g., 2 years)
+                if (task.recurrence !== 'none') {
+                    let currentDate = task.originalDueDate;
+                    const endDateLimit = new Date();
+                    endDateLimit.setFullYear(endDateLimit.getFullYear() + 2); // Show tabs for up to 2 years of recurrence
+
+                    for (let i = 0; i < 24 * (task.recurrence === 'monthly' ? 1 : (task.recurrence === 'weekly' ? 4 : 30)) ; i++) { // Heuristic limit
+                        currentDate = getNextDueDate(currentDate, task.recurrence);
+                        if (!currentDate || new Date(currentDate) > endDateLimit) break;
+                        const recurringDate = new Date(currentDate + 'T00:00:00');
+                        uniqueMonths.add(`${recurringDate.getFullYear()}-${String(recurringDate.getMonth() + 1).padStart(2, '0')}`);
+                    }
+                }
+            });
+
+
+            const sortedMonths = Array.from(uniqueMonths).sort();
+
+            if (sortedMonths.length === 0) {
+                 // Handled by default months above
+            }
+
+
+            sortedMonths.forEach(monthYear => {
+                const tabButton = document.createElement('button');
+                tabButton.className = 'tab-button';
+                tabButton.textContent = monthYear;
+                tabButton.dataset.monthYear = monthYear;
+                tabButton.onclick = () => {
+                    currentMonthYear = monthYear;
+                    document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
+                    tabButton.classList.add('active');
+                    renderTasksForCurrentMonth();
+                };
+                monthTabsContainer.appendChild(tabButton);
+            });
+
+            // Activate the current month's tab or the first available tab
+            if (!currentMonthYear && sortedMonths.length > 0) {
+                const currentActualMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+                if (sortedMonths.includes(currentActualMonth)) {
+                    currentMonthYear = currentActualMonth;
+                } else {
+                    currentMonthYear = sortedMonths[0];
+                }
+            } else if (sortedMonths.length === 0) {
+                currentMonthYear = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`; // fallback
+                const tabButton = document.createElement('button');
+                tabButton.className = 'tab-button active'; // Active by default
+                tabButton.textContent = currentMonthYear;
+                tabButton.dataset.monthYear = currentMonthYear;
+                tabButton.onclick = () => { /* already handled */ };
+                monthTabsContainer.appendChild(tabButton);
+            }
+
+
+            const activeTab = monthTabsContainer.querySelector(`.tab-button[data-month-year="${currentMonthYear}"]`);
+            if (activeTab) {
+                activeTab.classList.add('active');
+            } else if (monthTabsContainer.firstChild) { // Fallback to first tab if currentMonthYear not found
+                monthTabsContainer.firstChild.classList.add('active');
+                currentMonthYear = monthTabsContainer.firstChild.dataset.monthYear;
+            }
+        }
+
+        function renderApp() {
+            renderMonthTabs();
+            renderTasksForCurrentMonth();
+        }
+
+        // --- Event Listeners ---
+        taskForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const text = taskInput.value.trim();
+            const dueDate = taskDueDate.value;
+            const recurrence = taskRecurrence.value;
+
+            if (text && dueDate) {
+                addTask(text, dueDate, recurrence);
+                taskInput.value = '';
+                taskDueDate.value = ''; // Optionally reset date
+                // taskRecurrence.value = 'none'; // Optionally reset recurrence
+            } else {
+                alert('Please enter task description and due date.');
+            }
+        });
+
+        toggleModeBtn.addEventListener('click', () => {
+            document.body.classList.toggle('dark-mode');
+            saveThemePreference(document.body.classList.contains('dark-mode') ? 'dark' : 'light');
+        });
+
+        exportDataBtn.addEventListener('click', () => {
+            if (tasks.length === 0) {
+                alert("No data to export.");
+                return;
+            }
+            const jsonData = JSON.stringify(tasks, null, 2); // Pretty print JSON
+            const blob = new Blob([jsonData], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'todo-data.json';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        });
+
+        importDataFile.addEventListener('change', (event) => {
+            const file = event.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    try {
+                        const importedTasks = JSON.parse(e.target.result);
+                        if (Array.isArray(importedTasks)) {
+                            // Basic validation for task structure (can be more thorough)
+                            const isValid = importedTasks.every(task =>
+                                task.hasOwnProperty('id') &&
+                                task.hasOwnProperty('text') &&
+                                task.hasOwnProperty('dueDate') &&
+                                task.hasOwnProperty('recurrence') &&
+                                task.hasOwnProperty('completed') &&
+                                task.hasOwnProperty('originalDueDate')
+                            );
+
+                            if (isValid) {
+                                if (confirm("Importing will replace all current tasks. Continue?")) {
+                                    tasks = importedTasks;
+                                    saveTasks();
+                                    // Set currentMonthYear to the month of the first imported task or current month
+                                    if (tasks.length > 0) {
+                                        const firstTaskDate = new Date(tasks[0].dueDate + 'T00:00:00');
+                                        currentMonthYear = `${firstTaskDate.getFullYear()}-${String(firstTaskDate.getMonth() + 1).padStart(2, '0')}`;
+                                    } else {
+                                        const today = new Date();
+                                        currentMonthYear = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+                                    }
+                                    renderApp();
+                                    alert("Data imported successfully!");
+                                }
+                            } else {
+                                alert("Invalid JSON file format for tasks.");
+                            }
+                        } else {
+                            alert("Invalid JSON file format. Expected an array of tasks.");
+                        }
+                    } catch (error) {
+                        alert("Error reading or parsing JSON file: " + error.message);
+                    } finally {
+                        importDataFile.value = ''; // Reset file input
+                    }
+                };
+                reader.readAsText(file);
+            }
+        });
+
+
+        // --- Initial Load ---
+        loadThemePreference();
+        loadTasks();
+
+        // Set initial due date to today
+        const today = new Date();
+        const yyyy = today.getFullYear();
+        const mm = String(today.getMonth() + 1).padStart(2, '0'); // Months are 0-indexed
+        const dd = String(today.getDate()).padStart(2, '0');
+        taskDueDate.value = `${yyyy}-${mm}-${dd}`;
+
+        // Set initial currentMonthYear for tab selection
+        currentMonthYear = `${yyyy}-${mm}`;
+
+        renderApp();
+
+    </script>
+</body>
+</html>

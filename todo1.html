@@ -596,15 +596,27 @@
             });
         }
 
-                function renderMonthTabs() {
+        function renderMonthTabs() {
             monthTabsContainer.innerHTML = '';
             const uniqueMonths = new Set();
+
             const todayForTabs = new Date();
             const currentYear = todayForTabs.getFullYear();
             const currentMonth = todayForTabs.getMonth() + 1; // 1-indexed month
+            const currentMonthStr = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
 
-            // Add current month and next 11 months by default (total 12 including current)
-            for (let i = 0; i < 12; i++) {
+            const oneMonthAgoDate = new Date(todayForTabs);
+            oneMonthAgoDate.setMonth(todayForTabs.getMonth() - 1);
+            const oneMonthAgoYear = oneMonthAgoDate.getFullYear();
+            const oneMonthAgoMonth = oneMonthAgoDate.getMonth() + 1;
+            const oneMonthAgoStr = `${oneMonthAgoYear}-${String(oneMonthAgoMonth).padStart(2, '0')}`;
+
+            // Add "one month ago" and "current month" by default
+            uniqueMonths.add(oneMonthAgoStr);
+            uniqueMonths.add(currentMonthStr);
+
+            // Add next 11 future months by default (total 12 including current, effectively 13 with past one)
+            for (let i = 1; i <= 11; i++) { // Start from 1 to get future months relative to current
                 const date = new Date(currentYear, (currentMonth - 1) + i, 1); // Month is 0-indexed for Date constructor
                 const yearToAdd = date.getFullYear();
                 const monthToAdd = date.getMonth() + 1;
@@ -612,76 +624,78 @@
             }
 
             tasks.forEach(task => {
-                // Add month of original due date, if current or future
+                // Add month of original due date, if within the allowed range (one month ago to future)
                 const originalTaskDateObj = new Date(task.originalDueDate + 'T00:00:00');
                 if (!isNaN(originalTaskDateObj.getTime())) {
                     const taskYear = originalTaskDateObj.getFullYear();
                     const taskMonth = originalTaskDateObj.getMonth() + 1;
-                    if (taskYear > currentYear || (taskYear === currentYear && taskMonth >= currentMonth)) {
-                        uniqueMonths.add(`${taskYear}-${String(taskMonth).padStart(2, '0')}`);
+                    const taskMonthStr = `${taskYear}-${String(taskMonth).padStart(2, '0')}`;
+
+                    if (taskMonthStr >= oneMonthAgoStr) {
+                        uniqueMonths.add(taskMonthStr);
                     }
                 }
 
-                // Add months for active recurring tasks, if current or future
+                // Add months for active recurring tasks, if within the allowed range
                 if (task.recurrence !== 'none') {
                     let currentDate = task.originalDueDate;
                     // Project tabs for a reasonable future period (e.g., 2 years from today)
-                    const endDateLimit = new Date(currentYear + 2, currentMonth -1 , todayForTabs.getDate());
+                    const futureLimitDate = new Date(currentYear + 2, currentMonth - 1, todayForTabs.getDate());
 
-                    for (let i = 0; i < 730; i++) { // Limit iterations (approx 2 years daily)
+                    for (let i = 0; i < 730; i++) { // Limit iterations
                         currentDate = getNextDueDate(currentDate, task.recurrence);
                         if (!currentDate) break;
 
                         const recurringDateObj = new Date(currentDate + 'T00:00:00');
-                        if (isNaN(recurringDateObj.getTime()) || recurringDateObj > endDateLimit) break;
+                        if (isNaN(recurringDateObj.getTime()) || recurringDateObj > futureLimitDate) break;
 
                         const recurringTaskYear = recurringDateObj.getFullYear();
                         const recurringTaskMonth = recurringDateObj.getMonth() + 1;
+                        const recurringMonthStr = `${recurringTaskYear}-${String(recurringTaskMonth).padStart(2, '0')}`;
 
-                        // Only add tab if instance is NOT in deletedInstances AND is current or future
-                        if (!task.deletedInstances.includes(currentDate) &&
-                            (recurringTaskYear > currentYear || (recurringTaskYear === currentYear && recurringTaskMonth >= currentMonth))) {
-                            uniqueMonths.add(`${recurringTaskYear}-${String(recurringTaskMonth).padStart(2, '0')}`);
+                        if (!task.deletedInstances.includes(currentDate) && recurringMonthStr >= oneMonthAgoStr) {
+                            uniqueMonths.add(recurringMonthStr);
                         }
                     }
                 }
             });
 
-            // Filter out any past months that might have slipped through (e.g. from old data before this rule)
-            const futureAndCurrentMonths = Array.from(uniqueMonths).filter(monthYearStr => {
-                const [year, month] = monthYearStr.split('-').map(Number);
-                return year > currentYear || (year === currentYear && month >= currentMonth);
+            // Filter out any months older than "one month ago" that might have slipped through
+            const validDisplayMonths = Array.from(uniqueMonths).filter(monthYearStr => {
+                return monthYearStr >= oneMonthAgoStr; // String comparison works for "YYYY-MM"
             });
 
-            const sortedMonths = futureAndCurrentMonths.sort();
+            const sortedMonths = validDisplayMonths.sort();
 
             let newCurrentMonthYear = currentMonthYear; // Preserve current selection if still valid
 
             // Determine the active tab
             if (sortedMonths.length > 0) {
-                const currentActualMonthStr = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
-
-                // If currentMonthYear is past or not in sortedMonths, try to set to current actual month or first available future month
+                // Check if the globally stored currentMonthYear is valid under new rules
                 const [selectedYear, selectedMonth] = currentMonthYear ? currentMonthYear.split('-').map(Number) : [0,0];
-                if (!currentMonthYear || !sortedMonths.includes(currentMonthYear) || selectedYear < currentYear || (selectedYear === currentYear && selectedMonth < currentMonth) ) {
-                    if (sortedMonths.includes(currentActualMonthStr)) {
-                        newCurrentMonthYear = currentActualMonthStr;
-                    } else {
-                        // If current actual month is not in the list (e.g., no tasks, default tabs start later)
-                        // default to the first month in the sorted list.
-                        newCurrentMonthYear = sortedMonths[0];
-                    }
+                const currentMonthYearIsValid = currentMonthYear &&
+                                              sortedMonths.includes(currentMonthYear) &&
+                                              currentMonthYear >= oneMonthAgoStr;
+
+                if (currentMonthYearIsValid) {
+                    newCurrentMonthYear = currentMonthYear; // Keep it
+                } else if (sortedMonths.includes(currentMonthStr)) { // Default to current actual month if available
+                    newCurrentMonthYear = currentMonthStr;
+                } else if (sortedMonths.includes(oneMonthAgoStr) && currentMonthStr < oneMonthAgoStr) {
+                    // This case is unlikely if currentMonthStr is always added, but as a fallback
+                    newCurrentMonthYear = oneMonthAgoStr;
+                }
+                 else { // Otherwise, default to the first month in the sorted list
+                    newCurrentMonthYear = sortedMonths[0];
                 }
             } else {
-                // No tasks, no future default tabs (should be rare with default 12 months logic)
-                // Default to current actual month and add a tab for it.
-                newCurrentMonthYear = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
+                // Should not happen as we add current and one month ago by default
+                newCurrentMonthYear = currentMonthStr;
                 if (!monthTabsContainer.querySelector(`[data-month-year="${newCurrentMonthYear}"]`)) {
-                    const tabButton = document.createElement('button');
-                    tabButton.className = 'tab-button';
-                    tabButton.textContent = newCurrentMonthYear;
-                    tabButton.dataset.monthYear = newCurrentMonthYear;
-                    monthTabsContainer.appendChild(tabButton); // Add at least current month tab
+                     uniqueMonths.add(newCurrentMonthYear); // Ensure it's in the set
+                     // Re-sort and add if it was somehow missed (defensive)
+                     const tempSorted = Array.from(uniqueMonths).filter(m => m >= oneMonthAgoStr).sort();
+                     if (tempSorted.length > 0) newCurrentMonthYear = tempSorted[0];
                 }
             }
             currentMonthYear = newCurrentMonthYear; // Update global currentMonthYear
@@ -696,16 +710,19 @@
                     tabButton.classList.add('active');
                 }
                 tabButton.onclick = () => {
-                    // Check if the clicked tab is still valid (not a past month due to date change)
                     const [clickedYear, clickedMonth] = monthYearStr.split('-').map(Number);
                     const nowForClick = new Date();
                     const cYear = nowForClick.getFullYear();
                     const cMonth = nowForClick.getMonth() + 1;
+                    const oneMonthAgoClick = new Date(nowForClick);
+                    oneMonthAgoClick.setMonth(nowForClick.getMonth() - 1);
+                    const omacYear = oneMonthAgoClick.getFullYear();
+                    const omacMonth = oneMonthAgoClick.getMonth() + 1;
 
-                    if (clickedYear < cYear || (clickedYear === cYear && clickedMonth < cMonth)) {
-                        // If user somehow clicks a tab that became past (e.g. browser open overnight)
-                        // Re-render tabs which should correct the view.
-                        renderApp();
+
+                    // Check if the clicked tab is still valid (not older than one month ago due to date change)
+                    if (clickedYear < omacYear || (clickedYear === omacYear && clickedMonth < omacMonth)) {
+                        renderApp(); // Re-render tabs to correct the view
                         return;
                     }
 
@@ -717,14 +734,19 @@
                 monthTabsContainer.appendChild(tabButton);
             });
 
-            // Final check to ensure an active tab is set if one exists
+            // Final check for active tab
             const activeTab = monthTabsContainer.querySelector('.tab-button.active');
             if (!activeTab && monthTabsContainer.firstChild && monthTabsContainer.firstChild.classList.contains('tab-button')) {
                 monthTabsContainer.firstChild.classList.add('active');
                 currentMonthYear = monthTabsContainer.firstChild.dataset.monthYear;
-            } else if (!activeTab && !monthTabsContainer.firstChild) {
-                // If absolutely no tabs, ensure currentMonthYear is at least set to current month string
-                currentMonthYear = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
+            } else if (!monthTabsContainer.firstChild) { // No tabs at all
+                 currentMonthYear = currentMonthStr; // Fallback
+                 // Optionally, create a default tab for current month if none rendered
+                 const tabButton = document.createElement('button');
+                 tabButton.className = 'tab-button active';
+                 tabButton.textContent = currentMonthStr;
+                 tabButton.dataset.monthYear = currentMonthStr;
+                 monthTabsContainer.appendChild(tabButton);
             }
         }
 
@@ -836,31 +858,40 @@
         });
 
 
-        // --- Initial Load ---
         loadThemePreference();
         loadTasks();
 
         const today = new Date();
         const yyyy = today.getFullYear();
-        const mm = String(today.getMonth() + 1).padStart(2, '0');
+        const mm = String(today.getMonth() + 1).padStart(2, '0'); // Current month (1-indexed)
         const dd = String(today.getDate()).padStart(2, '0');
+
+        const oneMonthAgoInitial = new Date(today);
+        oneMonthAgoInitial.setMonth(today.getMonth() - 1);
+        const oneMonthAgoInitialYear = oneMonthAgoInitial.getFullYear();
+        const oneMonthAgoInitialMonth = oneMonthAgoInitial.getMonth() + 1;
+
+
         if (!taskDueDate.value) {
             taskDueDate.value = `${yyyy}-${mm}-${dd}`;
         }
 
-        // Set initial currentMonthYear for tab selection more robustly
-        // Ensure it's not a past month from stored data or an invalid value
-        const [initialSelectedYear, initialSelectedMonth] = currentMonthYear ? currentMonthYear.split('-').map(Number) : [0,0];
-        if (!currentMonthYear || // Not set
-            initialSelectedYear < yyyy || // Past year
-            (initialSelectedYear === yyyy && initialSelectedMonth < parseInt(mm)) || // Past month in current year
-            tasks.length === 0) { // Or no tasks to derive it from
-            currentMonthYear = `${yyyy}-${mm}`; // Default to current month
-        } else {
-            // If currentMonthYear was loaded and is valid, try to keep it,
-            // but renderMonthTabs will ultimately decide if it's in the generated list.
-            // The logic within renderMonthTabs for setting `newCurrentMonthYear` will handle this.
+        // Set initial currentMonthYear for tab selection
+        const currentActualMonthForLoad = `${yyyy}-${mm}`;
+        let validInitialCurrentMonthYear = false;
+
+        if (currentMonthYear) {
+            const [selectedYear, selectedMonth] = currentMonthYear.split('-').map(Number);
+            if (selectedYear > oneMonthAgoInitialYear ||
+               (selectedYear === oneMonthAgoInitialYear && selectedMonth >= oneMonthAgoInitialMonth)) {
+                validInitialCurrentMonthYear = true; // Loaded currentMonthYear is within allowed range
+            }
         }
+
+        if (!validInitialCurrentMonthYear) { // If not valid or not set
+            currentMonthYear = currentActualMonthForLoad; // Default to current actual month
+        }
+        // renderMonthTabs will further refine this based on available tabs.
 
         renderApp();
 
